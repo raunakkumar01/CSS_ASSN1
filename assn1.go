@@ -540,14 +540,100 @@ type sharingRecord struct {
 // You can assume the user has a STRONG password
 
 //InitUser : function used to create user
+
 func InitUser(username string, password string) (userdataptr *User, err error) {
-return 
+
+	userdataptr = new(User)
+	
+	/// generate username and password
+	Argon := userlib.Argon2Key([]byte(password),[]byte(itoa(configBlockSize)),32)
+	
+	h := userlib.NewSHA256()
+	h.Write([]byte(username))
+	hashed_username := h.Sum(nil)
+
+
+	/// store values
+
+	userdataptr.Argon = Argon
+	userdataptr.Username = string(hashed_username)
+	userdataptr.Key_size = 32
+
+	private, _ := userlib.GenerateRSAKey()
+	userdataptr.Privatekey = private
+	public := private.PublicKey
+
+	
+	userlib.DatastoreSet(string(Argon),hashed_username)
+	userlib.KeystoreSet(username,public)
+
+	pass_user := make([]byte,len(Argon)+len(hashed_username))
+	for i := 0;i<len(Argon);i++{
+		pass_user[i]=Argon[i]; 
+	}
+	for i := 0;i<len(hashed_username);i++{	
+	pass_user[len(Argon)+i]=hashed_username[i]; 
+	}
+
+
+	///store the user struct 
+	b,err := json.Marshal(userdataptr)
+	if err!=nil{}
+	userlib.DatastoreSet(string(pass_user),b)
+
+	return	userdataptr,errors.New("None")
 }
 
 // GetUser : This fetches the user information from the Datastore.  It should
 // fail with an error if the user/password is invalid, or if the user
 // data was corrupted, or if the user can't be found.
 //GetUser : function used to get the user details
-func GetUser(username string, password string) (userdataptr *User, err error) {
-return
+
+func equal(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i, x := range b {
+        if x != a[i] {
+            return false
+        }
+    }
+    return true
 }
+
+
+func GetUser(username string, password string) (userdataptr *User, err error) {
+	//userdataptr = new(User)
+
+	Argon_r := userlib.Argon2Key([]byte(password),[]byte(itoa(configBlockSize)),32)
+	usr_r,ok := userlib.DatastoreGet(string(Argon_r))
+	if !ok || usr_r == nil {		
+		return userdataptr,errors.New("Error");
+	}
+
+	h := userlib.NewSHA256()
+	h.Write([]byte(username))
+	hashed_username := h.Sum(nil)
+	
+	var s bool = equal(hashed_username,usr_r)
+	if  s == true {
+		pass_user := make([]byte,len(Argon_r)+len(hashed_username))
+		for i := 0;i<len(Argon_r);i++{
+			pass_user[i]=Argon_r[i]; 
+		}
+		for i := 0;i<len(hashed_username);i++{	
+			pass_user[len(Argon_r)+i]=hashed_username[i]; 
+		}
+
+		b,ok := userlib.DatastoreGet(string(pass_user))
+		if ok == true {}  
+		json.Unmarshal(b, &userdataptr)
+				
+		return userdataptr,errors.New("None")
+	}else{	
+	return userdataptr,errors.New("Error");
+	}
+}
+
+
+
