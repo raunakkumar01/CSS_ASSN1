@@ -441,6 +441,13 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 	return 
 }
 
+type shareRecord_digitSigntr struct {
+
+	Sharing_recd []byte
+	Dig_sig []byte
+}
+
+
 // ShareFile : Function used to the share file with other user
 func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
 
@@ -474,8 +481,19 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 		return "",errors.New("error")
 	}
 
-	msg,o := userlib.RSAEncrypt(&public,sharing,[]byte(itoa(configBlockSize)))
-	if o != nil{
+	new_record := new(shareRecord_digitSigntr)
+	new_record.Sharing_recd,err = userlib.RSAEncrypt(&public,sharing,[]byte(itoa(configBlockSize)))
+	//msg,o := userlib.RSAEncrypt(&public,sharing,[]byte(itoa(configBlockSize)))
+	if err != nil{
+		return "",errors.New("error")
+	}
+	new_record.Dig_sig,err = userlib.RSASign(userdata.Privatekey,sharing)
+	if err != nil{
+		return "",errors.New("error")
+	}
+	
+	msg,err := json.Marshal(new_record)
+	if err != nil{
 		return "",errors.New("error")
 	}
 
@@ -489,13 +507,21 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 // ReceiveFile : function used to receive the file details from the sender
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
 	
-	back,err := userlib.RSADecrypt(userdata.Privatekey,[]byte(msgid),[]byte(itoa(configBlockSize)))
+	var back shareRecord_digitSigntr
+	json.Unmarshal([]byte(msgid),&back)
+	new_back,err := userlib.RSADecrypt(userdata.Privatekey,[]byte(back.Sharing_recd),[]byte(itoa(configBlockSize)))
+	//back,err := userlib.RSADecrypt(userdata.Privatekey,[]byte(msgid),[]byte(itoa(configBlockSize)))
 	if err!=nil{
 		return err
 	}
+
+	public,_ := userlib.KeystoreGet(sender)
+	e := userlib.RSAVerify(&public,new_back,back.Dig_sig)
+	if e != nil{return err}
+
 	k1,k2,k3 := userdata.getK(filename)
 	record := new(sharingRecord)
-	json.Unmarshal(back,&record)
+	json.Unmarshal(new_back,&record)
 	userlib.DatastoreSet(k1,record.File_key)
 	userlib.DatastoreSet(k2,record.Enc_key)
 	userlib.DatastoreSet(k3,record.Iv_loc)
