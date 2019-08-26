@@ -4,7 +4,6 @@ package assn1
 // imports it will break the autograder, and we will be Very Upset.
 //
 import (
-
 	// You neet to add with
 	// go get github.com/sarkarbidya/CS628-assn1/userlib
 
@@ -178,12 +177,14 @@ return
 
 
 
-func getvalues(k1 string, k2 string, k3 string) (file_key []byte, enc_key []byte, ivmac []byte){
-	file_key,_ = userlib.DatastoreGet(k1)
-	enc_key,_ = userlib.DatastoreGet(k2)
-	iv_loc,_ := userlib.DatastoreGet(k3)
-	ivmac,_ = userlib.DatastoreGet(string(iv_loc))
-
+func getvalues(k1 string, k2 string, k3 string) (file_key []byte, enc_key []byte, ivmac []byte, err error){
+	file_key,a := userlib.DatastoreGet(k1)
+	enc_key,b := userlib.DatastoreGet(k2)
+	iv_loc,c := userlib.DatastoreGet(k3)
+	ivmac,d := userlib.DatastoreGet(string(iv_loc))
+	if !a || !b || !c || !d {
+		err = errors.New("user not found")
+	}
 	return 
 }
 
@@ -245,8 +246,10 @@ for i := 1;i<num_keys_per_block; i++ {
 for i:=0;i<num_blocks;i++ {
 	first_level_index := i/num_keys_per_block+1
 	second_level_index := i%num_keys_per_block
-	second,_ := userlib.DatastoreGet(string(root[first_level_index*32:(first_level_index+1)*32]))
-
+	second,ok := userlib.DatastoreGet(string(root[first_level_index*32:(first_level_index+1)*32]))
+	if !ok {
+		return errors.New("error")
+	}
 
 	curr_block := data[i*configBlockSize:(i+1)*configBlockSize]
 	cipher_block := make([]byte,len(curr_block))
@@ -278,14 +281,21 @@ return
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
 	k1,k2,k3 := userdata.getK(filename)
-	file_key,enc_key,ivmac := getvalues(k1,k2,k3)
-	iv_loc,_ := userlib.DatastoreGet(k3)
-
+	file_key,enc_key,ivmac,ok := getvalues(k1,k2,k3)
+	if ok!=nil {
+		return errors.New("error")
+	}
+	iv_loc,ok2 := userlib.DatastoreGet(k3)
+	if !ok2{
+		return errors.New("error")
+	}
 
 
 	num_keys_per_block := (configBlockSize/32)
-	root,_ := userlib.DatastoreGet(string(file_key))
-
+	root,ok1 := userlib.DatastoreGet(string(file_key))
+	if !ok1{
+		return errors.New("error")
+	}
 
 	var count int
 
@@ -309,7 +319,10 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
 	for i:=0;i<num_blocks;i++ {
 		first_level_index := file_size/num_keys_per_block+1
-		second,_ := userlib.DatastoreGet(string(root[first_level_index*32:(first_level_index+1)*32]))
+		second,ok := userlib.DatastoreGet(string(root[first_level_index*32:(first_level_index+1)*32]))
+		if !ok{
+			return errors.New("error")
+		}
 		second_level_index := file_size%num_keys_per_block
 
 		curr_block := data[i*configBlockSize:(i+1)*configBlockSize]
@@ -357,8 +370,15 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 func (userdata *User) LoadFile(filename string, offset int) (data []byte, err error) {
 	
 	k1,k2,k3 := userdata.getK(filename)
-	file_key,enc_key,ivmac := getvalues(k1,k2,k3)
-	iv_loc,_ := userlib.DatastoreGet(k3)
+	file_key,enc_key,ivmac,err := getvalues(k1,k2,k3)
+	if err!=nil {
+		return make([]byte,0), errors.New("error")
+	}
+	iv_loc,ok := userlib.DatastoreGet(k3)
+
+	if !ok{
+		return make([]byte,0),errors.New("error")
+	}
 
 	num_keys_per_block := (configBlockSize/32)
 	root,ok := userlib.DatastoreGet(string(file_key))
@@ -368,10 +388,17 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 	}
 
 	first_level_index := offset/num_keys_per_block+1
-	second,_ := userlib.DatastoreGet(string(root[first_level_index*32:(first_level_index+1)*32]))
+	second,ok := userlib.DatastoreGet(string(root[first_level_index*32:(first_level_index+1)*32]))
+	if !ok{
+		return make([]byte,0),errors.New("error")
+	}
 	second_level_index := offset%num_keys_per_block
 
-	data,_ = userlib.DatastoreGet(string(second[second_level_index*32:(second_level_index+1)*32]))
+	data,ok3 := userlib.DatastoreGet(string(second[second_level_index*32:(second_level_index+1)*32]))
+	if !ok3{
+		return make([]byte,0),errors.New("error")
+	}
+
 
 	h := userlib.NewHMAC(ivmac[offset*userlib.AESKeySize:(offset+1)*userlib.AESKeySize])
 	h.Write(data)
@@ -409,9 +436,9 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 
 
 	userlib.DatastoreSet(string(iv_loc),ivmac)
+	data = ret_data
 
-
-	return ret_data, errors.New("none")
+	return 
 }
 
 // ShareFile : Function used to the share file with other user
@@ -419,9 +446,13 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 
 	k1,k2,k3 := userdata.getK(filename)
 	record := new(sharingRecord)
-	a,_ := userlib.DatastoreGet(k1)
-	b,_ := userlib.DatastoreGet(k2)
-	c,_ := userlib.DatastoreGet(k3)
+	a,p := userlib.DatastoreGet(k1)
+	b,q := userlib.DatastoreGet(k2)
+	c,r := userlib.DatastoreGet(k3)
+
+	if !p||!q||!r {
+		return "",errors.New("user not found")
+	}
 
 	record.File_key = a
 	record.Enc_key = b
@@ -432,11 +463,21 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 
 	//public := &private.PublicKey
 //fmt.Println(public)
-	sharing,_ := json.Marshal(record)
-	public,_ := userlib.KeystoreGet(recipient)
+	sharing,m := json.Marshal(record)
+	public,n := userlib.KeystoreGet(recipient)
 	//fmt.Println(string(sharing))
 	//fmt.Println(public)
-	msg,_ := userlib.RSAEncrypt(&public,sharing,[]byte(itoa(configBlockSize)))
+	if m!=nil{
+		return "",errors.New("error")
+	}
+	if !n{
+		return "",errors.New("error")
+	}
+
+	msg,o := userlib.RSAEncrypt(&public,sharing,[]byte(itoa(configBlockSize)))
+	if o != nil{
+		return "",errors.New("error")
+	}
 
 	msgid = string(msg)
 	//fmt.Println(msgid)
@@ -448,7 +489,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 // ReceiveFile : function used to receive the file details from the sender
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
 	
-	back,_ := userlib.RSADecrypt(userdata.Privatekey,[]byte(msgid),[]byte(itoa(configBlockSize)))
+	back,err := userlib.RSADecrypt(userdata.Privatekey,[]byte(msgid),[]byte(itoa(configBlockSize)))
+	if err!=nil{
+		return err
+	}
 	k1,k2,k3 := userdata.getK(filename)
 	record := new(sharingRecord)
 	json.Unmarshal(back,&record)
@@ -456,8 +500,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	userlib.DatastoreSet(k2,record.Enc_key)
 	userlib.DatastoreSet(k3,record.Iv_loc)
 
-return errors.New("No error")
-
+return err
 
 }
 
@@ -465,11 +508,15 @@ return errors.New("No error")
 func (userdata *User) RevokeFile(filename string) (err error) {
 
 	k1,k2,k3 := userdata.getK(filename)
-	file_key,_,_ := getvalues(k1,k2,k3)
+	file_key,_,_,err := getvalues(k1,k2,k3)
+	if err!=nil{
+		return err
+	}
 
-
-	root,_ := userlib.DatastoreGet(string(file_key))
-
+	root,ok := userlib.DatastoreGet(string(file_key))
+	if !ok{
+		return errors.New("error")
+	}
 
 
 	var count int
@@ -489,7 +536,10 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	file_data := make([]byte,file_size*configBlockSize)
 
 	for i := 0;i<file_size;i++{
-		dat,_ := userdata.LoadFile(filename,i)
+		dat,ok := userdata.LoadFile(filename,i)
+		if ok!=nil {
+			return errors.New("error")
+		}
 		for j:=0;j<configBlockSize;j++{
 			file_data[i*configBlockSize+j]=dat[j]
 		}
@@ -565,7 +615,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdataptr.Username = string(hashed_username)
 	userdataptr.Key_size = 32
 
-	private, _ := userlib.GenerateRSAKey()
+	private, err := userlib.GenerateRSAKey()
+	if err!=nil{
+		return userdataptr,errors.New("error")
+	}
 	userdataptr.Privatekey = private
 	public := private.PublicKey
 
@@ -584,10 +637,12 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	///store the user struct 
 	b,err := json.Marshal(userdataptr)
-	if err!=nil{}
+	if err!=nil{
+		return userdataptr,errors.New("error")
+	}
 	userlib.DatastoreSet(string(pass_user),b)
 
-	return	userdataptr,errors.New("None")
+	return	
 }
 
 // GetUser : This fetches the user information from the Datastore.  It should
@@ -632,14 +687,66 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		}
 
 		b,ok := userlib.DatastoreGet(string(pass_user))
-		if ok == true {}  
+		if !ok{
+			return userdataptr,errors.New("error")
+		}  
 		json.Unmarshal(b, &userdataptr)
 				
-		return userdataptr,errors.New("None")
+		return ////////////////change
 	}else{	
 	return userdataptr,errors.New("Error");
 	}
 }
 
+/*
+
+func main() {
 
 
+
+_,_ = InitUser("debdan","abcd")
+_,err := GetUser("debdan","abcd")
+//fmt.Println(raunak.Username)
+fmt.Println(err)
+/*raunak,_ := InitUser("Raunak","pqrs")
+rand := userlib.RandomBytes(5*configBlockSize)
+debdan.StoreFile("hello",rand)
+//fmt.Println(rand)
+
+msg,_ := debdan.ShareFile("hello","Raunak")
+//fmt.Println(msg)
+raunak.ReceiveFile("world","debdan",msg)
+
+fmt.Println("debdan sees")
+
+for i:=0;i<7;i++ {
+	fmt.Println("value at offset",i)
+	fmt.Println(debdan.LoadFile("hello",i))
+}
+
+fmt.Println("raunak sees")
+
+for i:=0;i<7;i++ {
+	fmt.Println("value at offset",i)
+	fmt.Println(raunak.LoadFile("world",i))
+}
+
+fmt.Println("raunak revokes")
+raunak.RevokeFile("world")
+fmt.Println("raunak sees")
+
+for i:=0;i<7;i++ {
+	fmt.Println("value at offset",i)
+	fmt.Println(raunak.LoadFile("world",i))
+}
+
+
+fmt.Println("debdan sees")
+
+for i:=0;i<7;i++ {
+	fmt.Println("value at offset",i)
+	fmt.Println(debdan.LoadFile("hello",i))
+}
+
+}
+*/
