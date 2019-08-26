@@ -445,13 +445,19 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	return 
 }
 
-// ReceiveFile:Note recipient's filename can be different from the sender's filename.
-// The recipient should not be able to discover the sender's view on
-// what the filename even is!  However, the recipient must ensure that
-// it is authentically from the sender.
 // ReceiveFile : function used to receive the file details from the sender
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
-	return errors.New("none")
+	
+	back,_ := userlib.RSADecrypt(userdata.Privatekey,[]byte(msgid),[]byte(itoa(configBlockSize)))
+	k1,k2,k3 := userdata.getK(filename)
+	record := new(sharingRecord)
+	json.Unmarshal(back,&record)
+	userlib.DatastoreSet(k1,record.File_key)
+	userlib.DatastoreSet(k2,record.Enc_key)
+	userlib.DatastoreSet(k3,record.Iv_loc)
+
+return errors.New("No error")
+
 
 }
 
