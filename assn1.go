@@ -1,12 +1,12 @@
-package assn1
 
+package assn1
 // You MUST NOT change what you import.  If you add ANY additional
 // imports it will break the autograder, and we will be Very Upset.
 //
 import (
 	// You neet to add with
 	// go get github.com/sarkarbidya/CS628-assn1/userlib
-
+	//"fmt"
 	"github.com/sarkarbidya/CS628-assn1/userlib"
 
 	// Life is much easier with json:  You are
@@ -90,6 +90,12 @@ type User struct {
 
 }
 
+
+
+///////////////////////// auxiliary functions //////////////////////////
+
+
+///////// gives int from string
 func atoi(c string) (i int) {
 
 	for j:=0;j<len(c);j++ {
@@ -98,6 +104,8 @@ func atoi(c string) (i int) {
 	return 
 
 }
+
+//////// gives string from int
 func itoa(i int) (str string) {
 	j := i
 	count := 0
@@ -113,70 +121,68 @@ func itoa(i int) (str string) {
 		i/=10
 	}
 	return string(arr)
-} 
+}
 
-
+//////// given the user data, generates k1,k2,k3
 func (userdata *User) getK(file string) (k1 string, k2 string, k3 string){
 
-filename := []byte(file)
+	filename := []byte(file)
 
 
-username := []byte(userdata.Username)
-password := userdata.Argon
+	username := []byte(userdata.Username)
+	password := userdata.Argon
 
-file_key := make([]byte,len(filename)+len(password))
-enc_key := make([]byte,len(filename)+len(username))
-iv_loc := make([]byte,len(filename)+len(username)+len(password))
+	file_key := make([]byte,len(filename)+len(password))
+	enc_key := make([]byte,len(filename)+len(username))
+	iv_loc := make([]byte,len(filename)+len(username)+len(password))
 
 
-for i:=0;i<len(filename);i++{
-	file_key[i]=filename[i]
+	for i:=0;i<len(filename);i++{
+		file_key[i]=filename[i]
+	}
+
+	for i:=0;i<len(password);i++{
+		file_key[i+len(filename)]=password[i]
+	}
+
+
+	for i:=0;i<len(filename);i++{
+		enc_key[i]=filename[i]
+	}
+
+	for i:=0;i<len(username);i++{
+		enc_key[i+len(filename)]=username[i]
+	}
+
+	for i:=0;i<len(filename);i++{
+		iv_loc[i]=filename[i]
+	}
+
+	for i:=0;i<len(username);i++{
+		iv_loc[i+len(filename)]=username[i]
+	}
+
+	for i:=0;i<len(password);i++{
+		iv_loc[i+len(filename)+len(username)]=password[i]
+	}
+
+	h := userlib.NewSHA256()
+	h.Write(file_key)
+	k1 = string(h.Sum(nil))
+
+	h = userlib.NewSHA256()
+	h.Write(enc_key)
+	k2 = string(h.Sum(nil))
+
+	h = userlib.NewSHA256()
+	h.Write(iv_loc)
+	k3 = string(h.Sum(nil))
+
+	return
 }
 
-for i:=0;i<len(password);i++{
-	file_key[i+len(filename)]=password[i]
-}
 
-
-for i:=0;i<len(filename);i++{
-	enc_key[i]=filename[i]
-}
-
-for i:=0;i<len(username);i++{
-	enc_key[i+len(filename)]=username[i]
-}
-
-for i:=0;i<len(filename);i++{
-	iv_loc[i]=filename[i]
-}
-
-for i:=0;i<len(username);i++{
-	iv_loc[i+len(filename)]=username[i]
-}
-
-for i:=0;i<len(password);i++{
-	iv_loc[i+len(filename)+len(username)]=password[i]
-}
-
-h := userlib.NewSHA256()
-h.Write(file_key)
-k1 = string(h.Sum(nil))
-
-h = userlib.NewSHA256()
-h.Write(enc_key)
-k2 = string(h.Sum(nil))
-
-h = userlib.NewSHA256()
-h.Write(iv_loc)
-k3 = string(h.Sum(nil))
-
-return
-
-
-}
-
-
-
+//////// given k1,k2,k3 generates the file_key, enc_key and ivmac
 func getvalues(k1 string, k2 string, k3 string) (file_key []byte, enc_key []byte, ivmac []byte, err error){
 	file_key,a := userlib.DatastoreGet(k1)
 	enc_key,b := userlib.DatastoreGet(k2)
@@ -236,13 +242,14 @@ for i = j;i<32;i++ {
 
 
 
+/////////// generating the root index
 
 for i := 1;i<num_keys_per_block; i++ {
 	second_level := userlib.RandomBytes(32*num_keys_per_block)
 	userlib.DatastoreSet(string(root[i*32:(i+1)*32]),second_level)	
 }
 
-
+////////// generating second level index
 for i:=0;i<num_blocks;i++ {
 	first_level_index := i/num_keys_per_block+1
 	second_level_index := i%num_keys_per_block
@@ -260,9 +267,9 @@ for i:=0;i<num_blocks;i++ {
 	mac:= h.Sum(nil) 
 
 	for j:=0;j<32;j++ {
-		ivmac[800*userlib.AESKeySize+i*32+j] = mac[j]
+		ivmac[800*userlib.AESKeySize+i*32+j] = mac[j] ///// include the mac
 	}
-	userlib.DatastoreSet(string(second[second_level_index*32:(second_level_index+1)*32]),cipher_block)
+	userlib.DatastoreSet(string(second[second_level_index*32:(second_level_index+1)*32]),cipher_block)   ////// store cipher block
 
 }
 
@@ -280,6 +287,10 @@ return
 // AppendFile : Function to append the file
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
+	if len(data)%configBlockSize !=0{
+		return errors.New("block size error")
+	}
+
 	k1,k2,k3 := userdata.getK(filename)
 	file_key,enc_key,ivmac,ok := getvalues(k1,k2,k3)
 	if ok!=nil {
@@ -290,13 +301,14 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		return errors.New("error")
 	}
 
-
+	////////// extract root
 	num_keys_per_block := (configBlockSize/32)
 	root,ok1 := userlib.DatastoreGet(string(file_key))
 	if !ok1{
 		return errors.New("error")
 	}
 
+	///////// extract the file size 
 	var count int
 
 	for count =0; count<32; count++ {
@@ -415,6 +427,9 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 	stream.XORKeyStream(data, data)
 	ret_data:= data
 
+
+	///////// re-encrypt with new iv to win IND-CPA game
+
 	new_iv := userlib.RandomBytes(userlib.AESKeySize)
 	for i:=0;i<userlib.AESKeySize;i++{
 		ivmac[offset*userlib.AESKeySize+i]=new_iv[i];
@@ -456,7 +471,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	a,p := userlib.DatastoreGet(k1)
 	b,q := userlib.DatastoreGet(k2)
 	c,r := userlib.DatastoreGet(k3)
-
+	_,ok := userdata.LoadFile(filename,0)
+	if ok!=nil{
+		return 
+	}
 	if !p||!q||!r {
 		return "",errors.New("user not found")
 	}
@@ -500,8 +518,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	msgid = string(msg)
 	//fmt.Println(msgid)
 
-
-	return 
+	err = nil 
+	return  
 }
 
 // ReceiveFile : function used to receive the file details from the sender
@@ -512,12 +530,12 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	new_back,err := userlib.RSADecrypt(userdata.Privatekey,[]byte(back.Sharing_recd),[]byte(itoa(configBlockSize)))
 	//back,err := userlib.RSADecrypt(userdata.Privatekey,[]byte(msgid),[]byte(itoa(configBlockSize)))
 	if err!=nil{
-		return err
+		return errors.New("error")
 	}
 
 	public,_ := userlib.KeystoreGet(sender)
 	e := userlib.RSAVerify(&public,new_back,back.Dig_sig)
-	if e != nil{return err}
+	if e != nil{return errors.New("error")}
 
 	k1,k2,k3 := userdata.getK(filename)
 	record := new(sharingRecord)
@@ -525,7 +543,11 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	userlib.DatastoreSet(k1,record.File_key)
 	userlib.DatastoreSet(k2,record.Enc_key)
 	userlib.DatastoreSet(k3,record.Iv_loc)
-
+	_,ok := userdata.LoadFile(filename,0)
+	if ok!=nil{
+		return errors.New("error")
+	}
+	err = nil
 return err
 
 }
@@ -557,10 +579,13 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	for i :=0; i<count; i++ {
 		file_size_bytes[i]=root[i]
 	}
-
+	////// get file size
 	file_size := atoi(string(file_size_bytes))
+	
+	/////// make new space for file
 	file_data := make([]byte,file_size*configBlockSize)
 
+	/////// load blocks of current file and store them in new location
 	for i := 0;i<file_size;i++{
 		dat,ok := userdata.LoadFile(filename,i)
 		if ok!=nil {
@@ -571,7 +596,6 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 		}
 	}
 	userlib.DatastoreDelete(string(file_key)) 
-
 	userdata.StoreFile(filename,file_data[0:configBlockSize])
 
 	for i:=1;i<file_size;i++ {
@@ -626,17 +650,25 @@ type sharingRecord struct {
 func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	userdataptr = new(User)
+	user,val := GetUser(username,password)
 	
+	if val==nil{
+		return user,err
+	}	
+
+
+
 	/// generate username and password
 	Argon := userlib.Argon2Key([]byte(password),[]byte(itoa(configBlockSize)),32)
-	
+
+
+
 	h := userlib.NewSHA256()
 	h.Write([]byte(username))
 	hashed_username := h.Sum(nil)
 
 
 	/// store values
-
 	userdataptr.Argon = Argon
 	userdataptr.Username = string(hashed_username)
 	userdataptr.Key_size = 32
@@ -718,61 +750,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		}  
 		json.Unmarshal(b, &userdataptr)
 				
-		return ////////////////change
+		return 
 	}else{	
 	return userdataptr,errors.New("Error");
 	}
 }
 
-/*
-
-func main() {
-
-
-
-_,_ = InitUser("debdan","abcd")
-_,err := GetUser("debdan","abcd")
-//fmt.Println(raunak.Username)
-fmt.Println(err)
-/*raunak,_ := InitUser("Raunak","pqrs")
-rand := userlib.RandomBytes(5*configBlockSize)
-debdan.StoreFile("hello",rand)
-//fmt.Println(rand)
-
-msg,_ := debdan.ShareFile("hello","Raunak")
-//fmt.Println(msg)
-raunak.ReceiveFile("world","debdan",msg)
-
-fmt.Println("debdan sees")
-
-for i:=0;i<7;i++ {
-	fmt.Println("value at offset",i)
-	fmt.Println(debdan.LoadFile("hello",i))
-}
-
-fmt.Println("raunak sees")
-
-for i:=0;i<7;i++ {
-	fmt.Println("value at offset",i)
-	fmt.Println(raunak.LoadFile("world",i))
-}
-
-fmt.Println("raunak revokes")
-raunak.RevokeFile("world")
-fmt.Println("raunak sees")
-
-for i:=0;i<7;i++ {
-	fmt.Println("value at offset",i)
-	fmt.Println(raunak.LoadFile("world",i))
-}
-
-
-fmt.Println("debdan sees")
-
-for i:=0;i<7;i++ {
-	fmt.Println("value at offset",i)
-	fmt.Println(debdan.LoadFile("hello",i))
-}
-
-}
-*/
